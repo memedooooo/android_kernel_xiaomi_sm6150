@@ -954,7 +954,7 @@ else
 lto-clang-flags	:= -flto
 endif
 KBUILD_CFLAGS	+= -mllvm -unroll-threshold=1200
-lto-clang-flags += -fvisibility=hidden
+lto-clang-flags += -fvisibility=default
 
 KBUILD_LDFLAGS_MODULE += -T scripts/module-lto.lds
 
