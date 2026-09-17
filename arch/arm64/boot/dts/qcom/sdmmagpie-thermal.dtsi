@@ -98,7 +98,7 @@
 	qcom,msm-thermal-simple {
 		compatible = "qcom,msm-thermal-simple";
 		qcom,poll-ms = <1000>;
-		qcom,start-delay = <5>;
+		qcom,start-delay = <300>;
 
 		zone@0 {
 			reg = <0>;

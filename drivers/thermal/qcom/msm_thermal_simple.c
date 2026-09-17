@@ -86,23 +86,43 @@ static void thermal_throttle_worker(struct work_struct *work)
 	/* Now let's also get battery temperature */
 	thermal_zone_get_temp(thermal_zone_get_zone_by_name("battery"), &temp_batt);
 
-	/* HQ autism coming up */
-	if (temp_batt <= 24000)
-		/* Battery is cool-ish, bias the temp towards it */
-		temp_avg = (temp_cpus_avg * 2 + temp_batt * 3) / 5;
-	else if (temp_batt > 24000 && temp_batt <= 28000)
-		/* Getting warmer, start biasing towards CPU temps */
+	/* Account for battery temperature */
+	if (temp_batt <= 0) {
+		temp_avg = temp_cpus_avg;
+	} else if (temp_batt <= 28000) {
+		/* Battery is cool (< 28°C), bias towards it to allow bursts */
 		temp_avg = (temp_cpus_avg * 3 + temp_batt * 2) / 5;
-	else if (temp_batt > 28000 && temp_batt <= 32000)
-		/* Getting even warmer, go even more towards CPU temps */
+	} else if (temp_batt < 34000) {
+		/* Normal operating range (28°C - 34°C) */
 		temp_avg = (temp_cpus_avg * 4 + temp_batt) / 5;
-	else if (temp_batt > 32000)
-		/* Battery is hot, go for CPU temps */
-		temp_avg = (temp_cpus_avg * 5 + temp_batt) / 6;
+	} else if (temp_batt < 38000) {
+		/* Warm battery (34°C - 38°C), follow CPU temperature directly */
+		temp_avg = temp_cpus_avg;
+	} else if (temp_batt < 40000) {
+		/* Approaching hot (38°C - 40°C), add mild battery offset */
+		temp_avg = temp_cpus_avg + (temp_batt - 36000);
+	} else {
+		/*
+		 * Hot battery (>= 40°C):
+		 * Add thermal offset proportional to battery heat and enforce
+		 * minimum zone floors to guarantee throttling at 40°C+ battery.
+		 */
+		s64 batt_offset = (temp_batt - 38000) * 2;
+		temp_avg = temp_cpus_avg + batt_offset;
 
-	/* Emergency case */
+		if (temp_batt >= 46000)
+			temp_avg = max_t(s64, temp_avg, 80000); /* Zone 4 (80°C) */
+		else if (temp_batt >= 44000)
+			temp_avg = max_t(s64, temp_avg, 76000); /* Zone 3 (76°C) */
+		else if (temp_batt >= 42000)
+			temp_avg = max_t(s64, temp_avg, 70000); /* Zone 1/2 (69°C-72°C) */
+		else
+			temp_avg = max_t(s64, temp_avg, 65000); /* Zone 0 (65°C) */
+	}
+
+	/* Emergency case: protect CPU silicon if die is hot */
 	if (temp_cpus_avg > 75000)
-		temp_avg = (temp_cpus_avg * 6 + temp_batt) / 7;
+		temp_avg = max_t(s64, temp_avg, (s64)temp_cpus_avg);
 
 	old_zone = t->curr_zone;
 	new_zone = NULL;
